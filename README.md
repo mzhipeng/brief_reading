@@ -1,2 +1,4 @@
-# brief_reading
+# BriefReading
 Simple reading app developed using Flutter
+
+

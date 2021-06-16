@@ -1,113 +1,101 @@
-import 'package:flutter/material.dart';
+import 'package:brief_reading/global_state/state.dart';
+import 'package:brief_reading/global_state/store.dart';
+import 'package:brief_reading/pages/splash.dart';
+import 'package:fish_redux/fish_redux.dart';
+import 'package:flutter/material.dart' hide Action, Page;
+
+import 'pages/home/page.dart';
 
 void main() {
-  runApp(MyApp());
+  runApp(createApp());
 }
 
-class MyApp extends StatelessWidget {
-  // This widget is the root of your application.
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Flutter Demo',
-      theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // Try running your application with "flutter run". You'll see the
-        // application has a blue toolbar. Then, without quitting the app, try
-        // changing the primarySwatch below to Colors.green and then invoke
-        // "hot reload" (press "r" in the console where you ran "flutter run",
-        // or simply save your changes to "hot reload" in a Flutter IDE).
-        // Notice that the counter didn't reset back to zero; the application
-        // is not restarted.
-        primarySwatch: Colors.blue,
-      ),
-      home: MyHomePage(title: 'Flutter Demo Home Page'),
-    );
-  }
+/// 创建应用的根 Widget
+/// 1. 创建一个简单的路由，并注册页面
+/// 2. 对所需的页面进行和 AppStore 的连接
+/// 3. 对所需的页面进行 AOP 的增强
+Widget createApp() {
+  final AbstractRoutes routes = PageRoutes(
+    pages: <String, Page<Object, dynamic>>{
+      /// 注册主页面
+      '$HomePage': HomePage(),
+    },
+    visitor: (String path, Page<Object, dynamic> page) {
+      /// 只有特定的范围的 Page 才需要建立和 AppStore 的连接关系
+      /// 满足 Page<T> ，T 是 GlobalBaseState 的子类
+      if (page.isTypeof<GlobalBaseState>()) {
+        /// 建立 AppStore 驱动 PageStore 的单向数据连接
+        /// 1. 参数1 AppStore
+        /// 2. 参数2 当 AppStore.state 变化时, PageStore.state 该如何变化
+        page.connectExtraStore<GlobalState>(GlobalStore.store,
+            (Object pageState, GlobalState appState) {
+          if (pageState is GlobalBaseState) {
+            if (pageState.themeColor != appState.themeColor) {
+              if (pageState is Cloneable) {
+                final Object copy = (pageState as Cloneable).clone();
+                final GlobalBaseState newState = copy as GlobalBaseState;
+                newState.themeColor = appState.themeColor;
+                return newState;
+              }
+            }
+          }
+          return pageState;
+        });
+      }
+
+      /// AOP
+      /// 页面可以有一些私有的 AOP 的增强， 但往往会有一些 AOP 是整个应用下，所有页面都会有的。
+      /// 这些公共的通用 AOP ，通过遍历路由页面的形式统一加入。
+      page.enhancer.append(
+        /// View AOP
+        viewMiddleware: <ViewMiddleware<dynamic>>[
+          safetyView<dynamic>(),
+        ],
+
+        /// Adapter AOP
+        adapterMiddleware: <AdapterMiddleware<dynamic>>[
+          safetyAdapter<dynamic>()
+        ],
+
+        /// Effect AOP
+        effectMiddleware: <EffectMiddleware<dynamic>>[
+          _pageAnalyticsMiddleware<dynamic>(),
+        ],
+
+        /// Store AOP
+        middleware: <Middleware<dynamic>>[
+          logMiddleware<dynamic>(tag: page.runtimeType.toString()),
+        ],
+      );
+    },
+  );
+
+  return MaterialApp(
+    title: 'BriefReading',
+    debugShowCheckedModeBanner: false,
+    theme: ThemeData(
+      primarySwatch: Colors.blue,
+    ),
+    home: SplashPage(),
+    onGenerateRoute: (RouteSettings settings) {
+      return MaterialPageRoute<Object>(builder: (BuildContext context) {
+        return routes.buildPage(settings.name, settings.arguments);
+      });
+    },
+  );
 }
 
-class MyHomePage extends StatefulWidget {
-  MyHomePage({Key? key, required this.title}) : super(key: key);
-
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
-  final String title;
-
-  @override
-  _MyHomePageState createState() => _MyHomePageState();
-}
-
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
-
-  void _incrementCounter() {
-    setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
-    return Scaffold(
-      appBar: AppBar(
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
-      ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
-        child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Invoke "debug painting" (press "p" in the console, choose the
-          // "Toggle Debug Paint" action from the Flutter Inspector in Android
-          // Studio, or the "Toggle Debug Paint" command in Visual Studio Code)
-          // to see the wireframe for each widget.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            Text(
-              'You have pushed the button this many times:',
-            ),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headline4,
-            ),
-          ],
-        ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: Icon(Icons.add),
-      ), // This trailing comma makes auto-formatting nicer for build methods.
-    );
-  }
+/// 简单的 Effect AOP
+/// 只针对页面的生命周期进行打印
+EffectMiddleware<T> _pageAnalyticsMiddleware<T>({String tag = 'redux'}) {
+  return (AbstractLogic<dynamic> logic, Store<T> store) {
+    return (Effect<dynamic> effect) {
+      return (Action action, Context<dynamic> ctx) {
+        if (logic is Page<dynamic, dynamic> && action.type is Lifecycle) {
+          print('${logic.runtimeType} ${action.type.toString()} ');
+        }
+        return effect.call(action, ctx);
+      };
+    };
+  };
 }
